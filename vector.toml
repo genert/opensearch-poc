@@ -1,0 +1,28 @@
+[sources.main]
+type = "kafka"
+bootstrap_servers = "redpanda:9092"
+group_id = "vector-group"
+topics = [ "streaming.logs.json" ]
+
+[transforms.main]
+type = "filter"
+inputs = [ "main" ]
+condition = '.level != "debug"'
+
+[transforms.parse_logfmt]
+type = "remap"
+inputs = [ "main" ]
+source = """
+structured =
+  parse_syslog(.message) ??
+  parse_common_log(.message) ??
+  parse_regex!(.message, r'^(?P<timestamp>\\d+/\\d+/\\d+ \\d+:\\d+:\\d+) \\[(?P<severity>\\w+)\\] (?P<pid>\\d+)#(?P<tid>\\d+):(?: \\*(?P<connid>\\d+))? (?P<message>.*)$')
+. = merge(., structured)
+
+# Redact field values
+. = redact(., filters: ["us_social_security_number", r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$'])
+"""
+
+[sinks.opensearch]
+type = "elasticsearch"
+inputs = [ "main" ]
